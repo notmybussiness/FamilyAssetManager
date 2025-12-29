@@ -125,6 +125,50 @@ function createTables(): void {
     )
   `)
 
+  // Trading strategies table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS trading_strategies (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      stock_code TEXT,
+      name TEXT NOT NULL,
+      sell_trigger_percent REAL NOT NULL DEFAULT 5.0,
+      buy_trigger_percent REAL NOT NULL DEFAULT -5.0,
+      sell_quantity_percent REAL NOT NULL DEFAULT 50.0,
+      buy_amount REAL,
+      buy_quantity_multiplier REAL DEFAULT 1.0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Strategy signals table (triggered signals log)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS strategy_signals (
+      id TEXT PRIMARY KEY,
+      strategy_id TEXT NOT NULL,
+      holding_id TEXT NOT NULL,
+      stock_code TEXT NOT NULL,
+      stock_name TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      signal_type TEXT NOT NULL CHECK (signal_type IN ('BUY', 'SELL')),
+      trigger_price REAL NOT NULL,
+      avg_cost REAL NOT NULL,
+      trigger_percent REAL NOT NULL,
+      current_quantity REAL NOT NULL,
+      suggested_quantity REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'EXECUTED', 'DISMISSED')),
+      executed_transaction_id TEXT,
+      executed_at TEXT,
+      dismissed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (strategy_id) REFERENCES trading_strategies(id) ON DELETE CASCADE,
+      FOREIGN KEY (holding_id) REFERENCES holdings(id) ON DELETE CASCADE,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+    )
+  `)
+
   // Create indexes
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
@@ -132,6 +176,10 @@ function createTables(): void {
     CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_sync_logs_account ON sync_logs(account_id);
+    CREATE INDEX IF NOT EXISTS idx_strategies_user ON trading_strategies(user_id);
+    CREATE INDEX IF NOT EXISTS idx_signals_strategy ON strategy_signals(strategy_id);
+    CREATE INDEX IF NOT EXISTS idx_signals_status ON strategy_signals(status);
+    CREATE INDEX IF NOT EXISTS idx_signals_holding ON strategy_signals(holding_id);
   `)
 
   console.log('Database tables created successfully')
