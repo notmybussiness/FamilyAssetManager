@@ -4,7 +4,6 @@
  */
 
 import { getDatabase } from './database'
-
 // ===== 타입 정의 =====
 export interface ExchangeRateResult {
   success: boolean
@@ -186,6 +185,7 @@ async function searchStockCode(stockName: string): Promise<string | null> {
 async function fetchNaverPrice(stockCode: string): Promise<StockPriceResult> {
   try {
     const url = `https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:${stockCode}`
+    console.log(`[Naver API] 요청: ${stockCode}`)
 
     const response = await fetch(url, {
       headers: {
@@ -194,6 +194,7 @@ async function fetchNaverPrice(stockCode: string): Promise<StockPriceResult> {
     })
 
     if (!response.ok) {
+      console.log(`[Naver API] HTTP 오류: ${response.status}`)
       throw new Error(`HTTP ${response.status}`)
     }
 
@@ -219,13 +220,16 @@ async function fetchNaverPrice(stockCode: string): Promise<StockPriceResult> {
     }
 
     if (data.resultCode !== 'success') {
+      console.log(`[Naver API] 응답 오류: resultCode=${data.resultCode}`)
       throw new Error('Naver API error')
     }
 
     const stockData = data.result?.areas?.[0]?.datas?.[0]
     if (!stockData) {
+      console.log(`[Naver API] 데이터 없음: ${stockCode}`, JSON.stringify(data.result))
       throw new Error('No stock data')
     }
+    console.log(`[Naver API] ✅ ${stockCode}: ${stockData.nv}원`)
 
     // rf: 1,2=상승, 3=보합, 4,5=하락
     const isDown = stockData.rf === '4' || stockData.rf === '5'
@@ -260,6 +264,7 @@ async function fetchNaverPrice(stockCode: string): Promise<StockPriceResult> {
 async function fetchYahooPrice(symbol: string): Promise<StockPriceResult> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
+    console.log(`[Yahoo API] 요청: ${symbol}`)
 
     const response = await fetch(url, {
       headers: {
@@ -268,12 +273,20 @@ async function fetchYahooPrice(symbol: string): Promise<StockPriceResult> {
     })
 
     if (!response.ok) {
+      console.log(`[Yahoo API] HTTP 오류: ${response.status} for ${symbol}`)
       throw new Error(`HTTP ${response.status}`)
     }
 
     const data = await response.json()
-    return parseYahooResponse(data, symbol)
+    const result = parseYahooResponse(data, symbol)
+    if (result.success) {
+      console.log(`[Yahoo API] ✅ ${symbol}: $${result.currentPrice}`)
+    } else {
+      console.log(`[Yahoo API] ❌ ${symbol}: ${result.error}`)
+    }
+    return result
   } catch (error) {
+    console.log(`[Yahoo API] 예외: ${symbol} - ${error}`)
     return {
       success: false,
       stockCode: symbol,
@@ -333,10 +346,18 @@ const STOCK_CACHE_TTL = 1 * 60 * 1000 // 1분
 // 시세 조회 제외 종목 (조회 오류 발생)
 const SKIP_STOCK_CODES = ['HSBC', 'HSBC.L', 'HSBC.N']
 
-export async function fetchStockPrice(stockCode: string): Promise<StockPriceResult> {
+// 6자리 숫자 코드인지 확인 (한국 주식 표준)
+const isStandardKoreanCode = (code: string): boolean => /^\d{6}$/.test(code)
+
+// 미국 티커 패턴 (영문 대문자 1-5자리)
+const isUSTickerPattern = (code: string): boolean => /^[A-Z]{1,5}$/.test(code)
+
+export async function fetchStockPrice(stockCode: string, stockName?: string, currency?: string): Promise<StockPriceResult> {
+  console.log(`[fetchStockPrice] 시작: code="${stockCode}", name="${stockName || ''}", currency="${currency || ''}"`)
 
   // HSBC 등 조회 제외 종목
   if (SKIP_STOCK_CODES.some(skip => stockCode.toUpperCase().includes(skip.toUpperCase()))) {
+    console.log(`[fetchStockPrice] SKIP: "${stockCode}" - 제외 목록`)
     return {
       success: false,
       stockCode,
@@ -347,74 +368,124 @@ export async function fetchStockPrice(stockCode: string): Promise<StockPriceResu
     }
   }
 
-  // 한국 주식 여부 확인
-  // - 6자리 숫자: 일반 주식/ETF (005930, 360750 등)
-  // - 00XXX0 패턴: 신규 ETF (0052D0, 0008S0 등)
-  const isKoreanCode = (code: string): boolean =>
-    /^\d{6}$/.test(code) || /^0[0-9]{2}[0-9A-Z]{2}0$/.test(code)
-
-  let isKoreanStock = isKoreanCode(stockCode)
-  let actualCode = stockCode
-
-  // 한국 코드가 아니고, 한글이 포함된 경우 → 종목명으로 판단하여 코드 검색
-  if (!isKoreanStock && /[가-힣]/.test(stockCode)) {
-    const foundCode = await searchStockCode(stockCode)
-    if (foundCode) {
-      actualCode = foundCode
-      isKoreanStock = isKoreanCode(foundCode)
-    } else {
-      return {
-        success: false,
-        stockCode,
-        currentPrice: 0,
-        currency: 'KRW',
-        timestamp: new Date().toISOString(),
-        error: 'Stock code not found'
-      }
-    }
-  }
-
+  // 캐시 확인
   const cached = stockPriceCache.get(stockCode)
-
   if (cached && Date.now() - cached.timestamp < STOCK_CACHE_TTL) {
     return {
       success: true,
       stockCode,
       currentPrice: cached.price,
-      currency: isKoreanStock ? 'KRW' : 'USD',
+      currency: currency || 'KRW',
       timestamp: new Date(cached.timestamp).toISOString()
     }
   }
 
-  // 한국 주식: 네이버 금융, 미국 주식: Yahoo Finance
-  const result = isKoreanStock
-    ? await fetchNaverPrice(actualCode)
-    : await fetchYahooPrice(actualCode)
+  // 미국 주식 판단: currency가 USD
+  const isUSStock = currency === 'USD'
 
-  // 원래 stockCode로 결과 반환 (DB 키와 일치시키기 위해)
-  result.stockCode = stockCode
+  // 한국 주식 판단: currency가 KRW이거나, 6자리 숫자 코드이거나, 한글 포함
+  const isKoreanStock = currency === 'KRW' ||
+    isStandardKoreanCode(stockCode) ||
+    (stockName && /[가-힣]/.test(stockName)) ||
+    /[가-힣]/.test(stockCode)
 
-  if (result.success) {
-    stockPriceCache.set(stockCode, {
-      price: result.currentPrice,
-      timestamp: Date.now()
-    })
+  let actualCode = stockCode
+
+  // 미국 주식: Yahoo Finance로 조회
+  if (isUSStock) {
+    console.log(`[fetchStockPrice] 미국 주식 → Yahoo API: ${stockCode}`)
+    const result = await fetchYahooPrice(stockCode)
+
+    if (result.success) {
+      console.log(`[fetchStockPrice] ✅ "${stockCode}" → $${result.currentPrice}`)
+      stockPriceCache.set(stockCode, { price: result.currentPrice, timestamp: Date.now() })
+    } else {
+      console.log(`[fetchStockPrice] ❌ "${stockCode}" → 실패: ${result.error}`)
+    }
+
+    return result
   }
 
-  return result
+  // 한국 주식: 종목명으로 네이버에서 코드 검색
+  if (isKoreanStock) {
+    // 표준 6자리 숫자 코드가 아니면 → 종목명으로 검색
+    if (!isStandardKoreanCode(stockCode)) {
+      const searchTerm = stockName || stockCode
+      console.log(`[fetchStockPrice] 종목명으로 코드 검색: "${searchTerm}"`)
+      const foundCode = await searchStockCode(searchTerm)
+      if (foundCode) {
+        actualCode = foundCode
+        console.log(`[fetchStockPrice] 코드 발견: "${searchTerm}" → ${foundCode}`)
+      } else {
+        // 네이버에서 못 찾으면 Yahoo로 fallback 시도
+        console.log(`[fetchStockPrice] 네이버에서 못찾음, Yahoo fallback: "${stockCode}"`)
+        const yahooResult = await fetchYahooPrice(stockCode)
+        if (yahooResult.success) {
+          console.log(`[fetchStockPrice] ✅ Yahoo fallback 성공: "${stockCode}" → $${yahooResult.currentPrice}`)
+          stockPriceCache.set(stockCode, { price: yahooResult.currentPrice, timestamp: Date.now() })
+          return yahooResult
+        }
+        // Yahoo도 실패
+        console.log(`[fetchStockPrice] ❌ Yahoo fallback도 실패: "${stockCode}"`)
+        return {
+          success: false,
+          stockCode,
+          currentPrice: 0,
+          currency: 'KRW',
+          timestamp: new Date().toISOString(),
+          error: `종목 코드를 찾을 수 없음: ${searchTerm}`
+        }
+      }
+    }
+
+    // 네이버 API로 조회
+    console.log(`[fetchStockPrice] 네이버 API 호출: ${actualCode}`)
+    const result = await fetchNaverPrice(actualCode)
+    result.stockCode = stockCode  // 원래 코드로 반환
+
+    if (result.success) {
+      stockPriceCache.set(stockCode, { price: result.currentPrice, timestamp: Date.now() })
+      return result
+    }
+
+    // 네이버 실패 시 Yahoo fallback (찾은 코드로 시도)
+    console.log(`[fetchStockPrice] 네이버 실패, Yahoo fallback: "${actualCode}"`)
+    const yahooFallback = await fetchYahooPrice(actualCode)
+    if (yahooFallback.success) {
+      console.log(`[fetchStockPrice] ✅ Yahoo fallback 성공: "${stockCode}" → $${yahooFallback.currentPrice}`)
+      stockPriceCache.set(stockCode, { price: yahooFallback.currentPrice, timestamp: Date.now() })
+      return yahooFallback
+    }
+
+    return result  // 네이버 실패 결과 반환
+  }
+
+  // 분류 불가: 에러 반환
+  console.log(`[fetchStockPrice] ❌ "${stockCode}" → 분류 불가`)
+  return {
+    success: false,
+    stockCode,
+    currentPrice: 0,
+    currency: currency || 'KRW',
+    timestamp: new Date().toISOString(),
+    error: '종목 분류 불가 (한국/미국 아님)'
+  }
 }
 
 // 모든 보유종목 현재가 일괄 업데이트
 export async function updateAllHoldingPrices(userId: string): Promise<BulkPriceResult> {
   const db = getDatabase()
 
-  // 사용자의 모든 보유종목 조회
+  // 사용자의 모든 보유종목 조회 (stock_name도 함께)
   const holdings = db.prepare(`
-    SELECT DISTINCT h.stock_code, h.currency
+    SELECT DISTINCT h.stock_code, h.stock_name, h.currency
     FROM holdings h
     JOIN accounts a ON h.account_id = a.id
     WHERE a.user_id = ?
-  `).all(userId) as Array<{ stock_code: string; currency: string }>
+  `).all(userId) as Array<{ stock_code: string; stock_name: string; currency: string }>
+
+  console.log(`\n========== 시세 일괄 업데이트 시작 ==========`)
+  console.log(`[updateAll] 총 ${holdings.length}개 종목:`, holdings.map(h => h.stock_code))
 
   const results: StockPriceResult[] = []
   let updated = 0
@@ -432,7 +503,7 @@ export async function updateAllHoldingPrices(userId: string): Promise<BulkPriceR
   for (let i = 0; i < holdings.length; i += batchSize) {
     const batch = holdings.slice(i, i + batchSize)
     const batchResults = await Promise.all(
-      batch.map(h => fetchStockPrice(h.stock_code))
+      batch.map(h => fetchStockPrice(h.stock_code, h.stock_name, h.currency))
     )
 
     for (const result of batchResults) {
@@ -456,6 +527,14 @@ export async function updateAllHoldingPrices(userId: string): Promise<BulkPriceR
     if (i + batchSize < holdings.length) {
       await new Promise(resolve => setTimeout(resolve, 500))
     }
+  }
+
+  console.log(`\n========== 시세 업데이트 완료 ==========`)
+  console.log(`[updateAll] 성공: ${updated}개, 실패: ${failed}개`)
+  const failedResults = results.filter(r => !r.success)
+  if (failedResults.length > 0) {
+    console.log(`[updateAll] 실패 목록:`)
+    failedResults.forEach(r => console.log(`  - ${r.stockCode}: ${r.error}`))
   }
 
   return {
