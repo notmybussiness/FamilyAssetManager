@@ -134,10 +134,11 @@ async function fetchYahooPrice(symbol: string): Promise<StockPriceResult> {
   try {
     // Yahoo Finance는 한국 주식은 .KS (KOSPI) 또는 .KQ (KOSDAQ) 접미사 필요
     let yahooSymbol = symbol
+    const isKoreanStock = /^\d{6}$/.test(symbol)
 
     // 한국 주식 코드 (6자리 숫자)
-    if (/^\d{6}$/.test(symbol)) {
-      // KOSPI 종목으로 가정 (대부분)
+    if (isKoreanStock) {
+      // KOSPI 종목으로 먼저 시도 (대부분)
       yahooSymbol = `${symbol}.KS`
     }
 
@@ -152,24 +153,59 @@ async function fetchYahooPrice(symbol: string): Promise<StockPriceResult> {
     if (!response.ok) {
       // KOSDAQ 시도
       if (yahooSymbol.endsWith('.KS')) {
-        yahooSymbol = `${symbol}.KQ`
-        const retryResponse = await fetch(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`,
-          {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-          }
-        )
-        if (!retryResponse.ok) {
-          throw new Error(`HTTP ${retryResponse.status}`)
-        }
-        const retryData = await retryResponse.json()
-        return parseYahooResponse(retryData, symbol)
+        return await tryKosdaqFallback(symbol)
       }
       throw new Error(`HTTP ${response.status}`)
     }
 
+    const data = await response.json()
+    const result = parseYahooResponse(data, symbol)
+
+    // 한국 주식인 경우, 데이터가 오래되었으면 (7일 이상) KOSDAQ으로 재시도
+    if (isKoreanStock && result.success) {
+      const meta = data.chart?.result?.[0]?.meta
+      if (meta?.regularMarketTime) {
+        const marketTime = meta.regularMarketTime * 1000
+        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+        if (marketTime < sevenDaysAgo) {
+          // 데이터가 오래됨 - KOSDAQ 시도
+          const kosdaqResult = await tryKosdaqFallback(symbol)
+          // KOSDAQ 데이터가 더 최신이면 사용
+          if (kosdaqResult.success) {
+            return kosdaqResult
+          }
+        }
+      }
+    }
+
+    return result
+  } catch (error) {
+    return {
+      success: false,
+      stockCode: symbol,
+      currentPrice: 0,
+      currency: 'KRW',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
+  }
+}
+
+// KOSDAQ fallback 함수
+async function tryKosdaqFallback(symbol: string): Promise<StockPriceResult> {
+  try {
+    const yahooSymbol = `${symbol}.KQ`
+    const response = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      }
+    )
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
     const data = await response.json()
     return parseYahooResponse(data, symbol)
   } catch (error) {
