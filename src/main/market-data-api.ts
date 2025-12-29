@@ -153,9 +153,10 @@ async function fetchNaverPrice(stockCode: string): Promise<StockPriceResult> {
             cd: string      // 종목코드
             nm: string      // 종목명
             nv: number      // 현재가 (now value)
-            cv: number      // 전일대비 (change value)
-            cr: number      // 등락률 (change rate)
-            pcv: number     // 전일종가 (previous close value)
+            sv: number      // 전일종가 (standard value = 기준가)
+            cv: number      // 전일대비 절대값 (change value)
+            cr: number      // 등락률 절대값 (change rate)
+            rf: string      // 등락구분 (1,2=상승, 3=보합, 4,5=하락)
             ov: number      // 시가 (open value)
             hv: number      // 고가 (high value)
             lv: number      // 저가 (low value)
@@ -174,14 +175,19 @@ async function fetchNaverPrice(stockCode: string): Promise<StockPriceResult> {
       throw new Error('No stock data')
     }
 
+    // rf: 1,2=상승, 3=보합, 4,5=하락
+    const isDown = stockData.rf === '4' || stockData.rf === '5'
+    const change = isDown ? -stockData.cv : stockData.cv
+    const changePercent = isDown ? -stockData.cr : stockData.cr
+
     return {
       success: true,
       stockCode: stockCode,
       stockName: stockData.nm,
       currentPrice: stockData.nv,
-      prevClose: stockData.pcv,
-      change: stockData.cv,
-      changePercent: stockData.cr,
+      prevClose: stockData.sv,  // sv = 전일종가 (기준가)
+      change,
+      changePercent,
       currency: 'KRW',
       timestamp: new Date().toISOString()
     }
