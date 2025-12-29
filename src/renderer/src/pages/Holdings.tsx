@@ -31,6 +31,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 
 const BROKERAGE_LABELS: Record<string, string> = {
   KOREA_INV: '한국투자',
+  HANWHA: '한화투자',
   MIRAE: '미래에셋',
   SAMSUNG: '삼성증권',
   KIWOOM: '키움증권',
@@ -112,6 +113,10 @@ export default function Holdings({ userId }: HoldingsProps): JSX.Element {
 
   const filteredHoldings = holdings.filter((h) => {
     if (filter === 'all') return true
+    // 한국투자증권 선택 시 한화투자증권도 포함
+    if (filter === 'KOREA_INV') {
+      return h.brokerage === 'KOREA_INV' || h.brokerage === 'HANWHA'
+    }
     return h.account_type === filter || h.brokerage === filter
   })
 

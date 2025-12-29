@@ -31,6 +31,7 @@ interface TransactionsProps {
 
 const BROKERAGE_LABELS: Record<string, string> = {
   KOREA_INV: '한국투자',
+  HANWHA: '한화투자',
   MIRAE: '미래에셋',
   SAMSUNG: '삼성증권',
   KIWOOM: '키움증권',

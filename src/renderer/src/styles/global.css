@@ -596,6 +596,26 @@ select.glass-select {
   min-width: 150px;
 }
 
+/* Select option styling - fix white text on white background */
+select option {
+  background-color: #1e293b;
+  color: #f1f5f9;
+  padding: 0.5rem;
+}
+
+select option:checked,
+select option:hover {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.form-group select option,
+.user-selector select option,
+.header-actions select option {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
 /* Modal - Glassmorphism */
 .modal-overlay {
   position: fixed;
