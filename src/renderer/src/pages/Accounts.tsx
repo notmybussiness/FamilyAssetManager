@@ -342,6 +342,7 @@ export default function Accounts({ userId }: AccountsProps): JSX.Element {
                       required
                     >
                       <option value="KOREA_INV">한국투자증권 (API)</option>
+                      <option value="HANWHA">한화투자증권 (엑셀/수동)</option>
                       <option value="MIRAE">미래에셋 (엑셀/수동)</option>
                       <option value="SAMSUNG">삼성증권 (엑셀/수동)</option>
                       <option value="KIWOOM">키움증권 (엑셀/수동)</option>
