@@ -140,6 +140,38 @@ const api = {
     refreshAll: (userId: string) =>
       ipcRenderer.invoke('marketData:refreshAll', userId),
     clearCache: () => ipcRenderer.invoke('marketData:clearCache')
+  },
+
+  // Trading Strategy APIs (5% 그리드 전략)
+  strategy: {
+    getAll: (userId: string) =>
+      ipcRenderer.invoke('strategy:getAll', userId),
+    getActive: (userId: string) =>
+      ipcRenderer.invoke('strategy:getActive', userId),
+    create: (data: {
+      user_id: string
+      name: string
+      stock_code?: string
+      sell_trigger_percent?: number
+      buy_trigger_percent?: number
+      sell_quantity_percent?: number
+      buy_amount?: number
+      buy_quantity_multiplier?: number
+    }) => ipcRenderer.invoke('strategy:create', data),
+    update: (id: string, data: Record<string, unknown>) =>
+      ipcRenderer.invoke('strategy:update', id, data),
+    delete: (id: string) =>
+      ipcRenderer.invoke('strategy:delete', id),
+    checkSignals: (userId: string) =>
+      ipcRenderer.invoke('strategy:checkSignals', userId),
+    getSignals: (userId: string, status?: 'PENDING' | 'EXECUTED' | 'DISMISSED') =>
+      ipcRenderer.invoke('strategy:getSignals', userId, status),
+    executeSignal: (signalId: string) =>
+      ipcRenderer.invoke('strategy:executeSignal', signalId),
+    dismissSignal: (signalId: string) =>
+      ipcRenderer.invoke('strategy:dismissSignal', signalId),
+    getSignalHistory: (userId: string, limit?: number) =>
+      ipcRenderer.invoke('strategy:getSignalHistory', userId, limit)
   }
 }
 

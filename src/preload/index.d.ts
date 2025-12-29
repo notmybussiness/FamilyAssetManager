@@ -246,6 +246,62 @@ interface AggregatedHoldingWithChange extends AggregatedHolding {
   users: string
 }
 
+interface TradingStrategy {
+  id: string
+  user_id: string
+  stock_code: string | null
+  name: string
+  sell_trigger_percent: number
+  buy_trigger_percent: number
+  sell_quantity_percent: number
+  buy_amount: number | null
+  buy_quantity_multiplier: number
+  is_active: number
+  created_at: string
+}
+
+interface StrategySignal {
+  id: string
+  strategy_id: string
+  holding_id: string
+  stock_code: string
+  stock_name: string
+  account_id: string
+  signal_type: 'BUY' | 'SELL'
+  trigger_price: number
+  avg_cost: number
+  trigger_percent: number
+  current_quantity: number
+  suggested_quantity: number
+  status: 'PENDING' | 'EXECUTED' | 'DISMISSED'
+  executed_transaction_id: string | null
+  executed_at: string | null
+  dismissed_at: string | null
+  created_at: string
+}
+
+interface StrategySignalWithDetails extends StrategySignal {
+  strategy_name: string
+  brokerage: string
+  account_type: string
+  account_alias: string | null
+  currency: string
+  latest_price: number
+}
+
+interface CheckSignalsResult {
+  signals: number
+  checked: number
+}
+
+interface ExecuteSignalResult {
+  success: boolean
+  transaction_id: string
+  type: 'BUY' | 'SELL'
+  quantity: number
+  price: number
+}
+
 interface API {
   user: {
     getAll: () => Promise<User[]>
@@ -352,6 +408,36 @@ interface API {
     updateStockPrice: (stockCode: string) => Promise<StockPriceResult>
     refreshAll: (userId: string) => Promise<BulkPriceResult>
     clearCache: () => Promise<{ success: boolean }>
+  }
+  strategy: {
+    getAll: (userId: string) => Promise<TradingStrategy[]>
+    getActive: (userId: string) => Promise<TradingStrategy[]>
+    create: (data: {
+      user_id: string
+      name: string
+      stock_code?: string
+      sell_trigger_percent?: number
+      buy_trigger_percent?: number
+      sell_quantity_percent?: number
+      buy_amount?: number
+      buy_quantity_multiplier?: number
+    }) => Promise<TradingStrategy>
+    update: (id: string, data: Partial<{
+      name: string
+      stock_code: string | null
+      sell_trigger_percent: number
+      buy_trigger_percent: number
+      sell_quantity_percent: number
+      buy_amount: number | null
+      buy_quantity_multiplier: number
+      is_active: number
+    }>) => Promise<TradingStrategy>
+    delete: (id: string) => Promise<{ success: boolean }>
+    checkSignals: (userId: string) => Promise<CheckSignalsResult>
+    getSignals: (userId: string, status?: 'PENDING' | 'EXECUTED' | 'DISMISSED') => Promise<StrategySignalWithDetails[]>
+    executeSignal: (signalId: string) => Promise<ExecuteSignalResult>
+    dismissSignal: (signalId: string) => Promise<{ success: boolean }>
+    getSignalHistory: (userId: string, limit?: number) => Promise<StrategySignalWithDetails[]>
   }
 }
 
