@@ -982,3 +982,369 @@ function updateHoldingsAfterTransaction(data: {
   }
   // DIVIDEND doesn't affect holdings quantity/cost
 }
+
+// ===== TRADING STRATEGY HANDLERS =====
+
+interface TradingStrategy {
+  id: string
+  user_id: string
+  stock_code: string | null
+  name: string
+  sell_trigger_percent: number
+  buy_trigger_percent: number
+  sell_quantity_percent: number
+  buy_amount: number | null
+  buy_quantity_multiplier: number
+  is_active: number
+  created_at: string
+}
+
+interface StrategySignal {
+  id: string
+  strategy_id: string
+  holding_id: string
+  stock_code: string
+  stock_name: string
+  account_id: string
+  signal_type: 'BUY' | 'SELL'
+  trigger_price: number
+  avg_cost: number
+  trigger_percent: number
+  current_quantity: number
+  suggested_quantity: number
+  status: 'PENDING' | 'EXECUTED' | 'DISMISSED'
+  executed_transaction_id: string | null
+  executed_at: string | null
+  dismissed_at: string | null
+  created_at: string
+}
+
+// Get all strategies for a user
+ipcMain.handle('strategy:getAll', (_, userId: string) => {
+  const db = getDatabase()
+  return db.prepare('SELECT * FROM trading_strategies WHERE user_id = ? ORDER BY created_at DESC').all(userId)
+})
+
+// Get active strategies for a user
+ipcMain.handle('strategy:getActive', (_, userId: string) => {
+  const db = getDatabase()
+  return db.prepare('SELECT * FROM trading_strategies WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC').all(userId)
+})
+
+// Create a new strategy
+ipcMain.handle('strategy:create', (_, data: {
+  user_id: string
+  name: string
+  stock_code?: string
+  sell_trigger_percent?: number
+  buy_trigger_percent?: number
+  sell_quantity_percent?: number
+  buy_amount?: number
+  buy_quantity_multiplier?: number
+}) => {
+  const db = getDatabase()
+  const id = uuidv4()
+  db.prepare(`
+    INSERT INTO trading_strategies (id, user_id, stock_code, name, sell_trigger_percent, buy_trigger_percent, sell_quantity_percent, buy_amount, buy_quantity_multiplier)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    data.user_id,
+    data.stock_code || null,
+    data.name,
+    data.sell_trigger_percent ?? 5.0,
+    data.buy_trigger_percent ?? -5.0,
+    data.sell_quantity_percent ?? 50.0,
+    data.buy_amount ?? null,
+    data.buy_quantity_multiplier ?? 1.0
+  )
+  return db.prepare('SELECT * FROM trading_strategies WHERE id = ?').get(id)
+})
+
+// Update a strategy
+ipcMain.handle('strategy:update', (_, id: string, data: Partial<{
+  name: string
+  stock_code: string | null
+  sell_trigger_percent: number
+  buy_trigger_percent: number
+  sell_quantity_percent: number
+  buy_amount: number | null
+  buy_quantity_multiplier: number
+  is_active: number
+}>) => {
+  const db = getDatabase()
+  const fields: string[] = []
+  const values: (string | number | null)[] = []
+
+  if (data.name !== undefined) { fields.push('name = ?'); values.push(data.name) }
+  if (data.stock_code !== undefined) { fields.push('stock_code = ?'); values.push(data.stock_code) }
+  if (data.sell_trigger_percent !== undefined) { fields.push('sell_trigger_percent = ?'); values.push(data.sell_trigger_percent) }
+  if (data.buy_trigger_percent !== undefined) { fields.push('buy_trigger_percent = ?'); values.push(data.buy_trigger_percent) }
+  if (data.sell_quantity_percent !== undefined) { fields.push('sell_quantity_percent = ?'); values.push(data.sell_quantity_percent) }
+  if (data.buy_amount !== undefined) { fields.push('buy_amount = ?'); values.push(data.buy_amount) }
+  if (data.buy_quantity_multiplier !== undefined) { fields.push('buy_quantity_multiplier = ?'); values.push(data.buy_quantity_multiplier) }
+  if (data.is_active !== undefined) { fields.push('is_active = ?'); values.push(data.is_active) }
+
+  if (fields.length > 0) {
+    values.push(id)
+    db.prepare(`UPDATE trading_strategies SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+  }
+  return db.prepare('SELECT * FROM trading_strategies WHERE id = ?').get(id)
+})
+
+// Delete a strategy
+ipcMain.handle('strategy:delete', (_, id: string) => {
+  const db = getDatabase()
+  db.prepare('DELETE FROM trading_strategies WHERE id = ?').run(id)
+  return { success: true }
+})
+
+// Check holdings against active strategies and generate signals
+ipcMain.handle('strategy:checkSignals', (_, userId: string) => {
+  const db = getDatabase()
+
+  // Get active strategies for user
+  const strategies = db.prepare('SELECT * FROM trading_strategies WHERE user_id = ? AND is_active = 1').all() as TradingStrategy[]
+  if (strategies.length === 0) {
+    return { signals: [], checked: 0 }
+  }
+
+  // Get user's holdings with account info
+  const holdings = db.prepare(`
+    SELECT h.*, a.user_id, a.brokerage, a.account_type
+    FROM holdings h
+    JOIN accounts a ON h.account_id = a.id
+    WHERE a.user_id = ? AND h.quantity > 0
+  `).all(userId) as Array<{
+    id: string
+    account_id: string
+    stock_code: string
+    stock_name: string
+    quantity: number
+    avg_cost: number
+    current_price: number
+    currency: string
+  }>
+
+  const newSignals: Array<Omit<StrategySignal, 'id' | 'created_at'>> = []
+  const today = new Date().toISOString().split('T')[0]
+
+  for (const holding of holdings) {
+    // Skip if no avg_cost (can't calculate return)
+    if (holding.avg_cost <= 0) continue
+
+    // Calculate return percentage from avg_cost
+    const returnPercent = ((holding.current_price - holding.avg_cost) / holding.avg_cost) * 100
+
+    for (const strategy of strategies) {
+      // Check if strategy applies to this stock
+      if (strategy.stock_code && strategy.stock_code !== holding.stock_code) continue
+
+      // Check if signal already exists for this holding today
+      const existingSignal = db.prepare(`
+        SELECT id FROM strategy_signals
+        WHERE holding_id = ? AND strategy_id = ? AND DATE(created_at) = ? AND status = 'PENDING'
+      `).get(holding.id, strategy.id, today)
+
+      if (existingSignal) continue
+
+      // Check SELL trigger (positive return >= threshold)
+      if (returnPercent >= strategy.sell_trigger_percent) {
+        const suggestedQty = Math.floor(holding.quantity * (strategy.sell_quantity_percent / 100))
+        if (suggestedQty > 0) {
+          newSignals.push({
+            strategy_id: strategy.id,
+            holding_id: holding.id,
+            stock_code: holding.stock_code,
+            stock_name: holding.stock_name,
+            account_id: holding.account_id,
+            signal_type: 'SELL',
+            trigger_price: holding.current_price,
+            avg_cost: holding.avg_cost,
+            trigger_percent: returnPercent,
+            current_quantity: holding.quantity,
+            suggested_quantity: suggestedQty,
+            status: 'PENDING',
+            executed_transaction_id: null,
+            executed_at: null,
+            dismissed_at: null
+          })
+        }
+      }
+
+      // Check BUY trigger (negative return <= threshold)
+      if (returnPercent <= strategy.buy_trigger_percent) {
+        let suggestedQty: number
+        if (strategy.buy_amount) {
+          // Fixed amount buying
+          suggestedQty = Math.floor(strategy.buy_amount / holding.current_price)
+        } else {
+          // Multiplier-based buying
+          suggestedQty = Math.floor(holding.quantity * strategy.buy_quantity_multiplier)
+        }
+
+        if (suggestedQty > 0) {
+          newSignals.push({
+            strategy_id: strategy.id,
+            holding_id: holding.id,
+            stock_code: holding.stock_code,
+            stock_name: holding.stock_name,
+            account_id: holding.account_id,
+            signal_type: 'BUY',
+            trigger_price: holding.current_price,
+            avg_cost: holding.avg_cost,
+            trigger_percent: returnPercent,
+            current_quantity: holding.quantity,
+            suggested_quantity: suggestedQty,
+            status: 'PENDING',
+            executed_transaction_id: null,
+            executed_at: null,
+            dismissed_at: null
+          })
+        }
+      }
+    }
+  }
+
+  // Insert new signals
+  const insertStmt = db.prepare(`
+    INSERT INTO strategy_signals (id, strategy_id, holding_id, stock_code, stock_name, account_id, signal_type, trigger_price, avg_cost, trigger_percent, current_quantity, suggested_quantity, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  for (const signal of newSignals) {
+    insertStmt.run(
+      uuidv4(),
+      signal.strategy_id,
+      signal.holding_id,
+      signal.stock_code,
+      signal.stock_name,
+      signal.account_id,
+      signal.signal_type,
+      signal.trigger_price,
+      signal.avg_cost,
+      signal.trigger_percent,
+      signal.current_quantity,
+      signal.suggested_quantity,
+      signal.status
+    )
+  }
+
+  return { signals: newSignals.length, checked: holdings.length }
+})
+
+// Get pending signals for a user
+ipcMain.handle('strategy:getSignals', (_, userId: string, status?: 'PENDING' | 'EXECUTED' | 'DISMISSED') => {
+  const db = getDatabase()
+  let query = `
+    SELECT ss.*, ts.name as strategy_name, a.brokerage, a.account_type, a.account_alias,
+           h.currency, h.current_price as latest_price
+    FROM strategy_signals ss
+    JOIN trading_strategies ts ON ss.strategy_id = ts.id
+    JOIN accounts a ON ss.account_id = a.id
+    JOIN holdings h ON ss.holding_id = h.id
+    WHERE ts.user_id = ?
+  `
+  const params: (string | undefined)[] = [userId]
+
+  if (status) {
+    query += ' AND ss.status = ?'
+    params.push(status)
+  }
+
+  query += ' ORDER BY ss.created_at DESC'
+
+  return db.prepare(query).all(...params)
+})
+
+// Execute a signal (create transaction)
+ipcMain.handle('strategy:executeSignal', (_, signalId: string) => {
+  const db = getDatabase()
+
+  // Get signal details
+  const signal = db.prepare('SELECT * FROM strategy_signals WHERE id = ?').get(signalId) as StrategySignal | undefined
+  if (!signal) {
+    throw new Error('Signal not found')
+  }
+  if (signal.status !== 'PENDING') {
+    throw new Error('Signal is not pending')
+  }
+
+  // Get current holding info
+  const holding = db.prepare('SELECT * FROM holdings WHERE id = ?').get(signal.holding_id) as { current_price: number; currency: string } | undefined
+  if (!holding) {
+    throw new Error('Holding not found')
+  }
+
+  // Create transaction
+  const transactionId = uuidv4()
+  const totalAmount = signal.suggested_quantity * holding.current_price
+
+  db.prepare(`
+    INSERT INTO transactions (id, account_id, stock_code, stock_name, type, quantity, price, total_amount, currency, date, is_manual, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'MANUAL')
+  `).run(
+    transactionId,
+    signal.account_id,
+    signal.stock_code,
+    signal.stock_name,
+    signal.signal_type,
+    signal.suggested_quantity,
+    holding.current_price,
+    totalAmount,
+    holding.currency,
+    new Date().toISOString().split('T')[0]
+  )
+
+  // Update holdings
+  updateHoldingsAfterTransaction({
+    account_id: signal.account_id,
+    stock_code: signal.stock_code,
+    stock_name: signal.stock_name,
+    type: signal.signal_type,
+    quantity: signal.suggested_quantity,
+    price: holding.current_price,
+    currency: holding.currency
+  })
+
+  // Mark signal as executed
+  db.prepare(`
+    UPDATE strategy_signals
+    SET status = 'EXECUTED', executed_transaction_id = ?, executed_at = datetime('now')
+    WHERE id = ?
+  `).run(transactionId, signalId)
+
+  return {
+    success: true,
+    transaction_id: transactionId,
+    type: signal.signal_type,
+    quantity: signal.suggested_quantity,
+    price: holding.current_price
+  }
+})
+
+// Dismiss a signal
+ipcMain.handle('strategy:dismissSignal', (_, signalId: string) => {
+  const db = getDatabase()
+  db.prepare(`
+    UPDATE strategy_signals
+    SET status = 'DISMISSED', dismissed_at = datetime('now')
+    WHERE id = ? AND status = 'PENDING'
+  `).run(signalId)
+  return { success: true }
+})
+
+// Get signal history
+ipcMain.handle('strategy:getSignalHistory', (_, userId: string, limit: number = 50) => {
+  const db = getDatabase()
+  return db.prepare(`
+    SELECT ss.*, ts.name as strategy_name, a.brokerage, a.account_type, a.account_alias, h.currency
+    FROM strategy_signals ss
+    JOIN trading_strategies ts ON ss.strategy_id = ts.id
+    JOIN accounts a ON ss.account_id = a.id
+    JOIN holdings h ON ss.holding_id = h.id
+    WHERE ts.user_id = ? AND ss.status != 'PENDING'
+    ORDER BY COALESCE(ss.executed_at, ss.dismissed_at) DESC
+    LIMIT ?
+  `).all(userId, limit)
+})
