@@ -19,6 +19,7 @@ export interface StockPriceResult {
   stockCode: string
   stockName?: string
   currentPrice: number
+  prevClose?: number
   change?: number
   changePercent?: number
   currency: string
@@ -129,20 +130,10 @@ export async function fetchExchangeRate(from: string = 'USD', to: string = 'KRW'
 
 // ===== 주식 현재가 API =====
 
-// Yahoo Finance API (비공식, 무료)
-async function fetchYahooPrice(symbol: string): Promise<StockPriceResult> {
+// 네이버 금융 API (한국 주식용 - 안정적)
+async function fetchNaverPrice(stockCode: string): Promise<StockPriceResult> {
   try {
-    // Yahoo Finance는 한국 주식은 .KS (KOSPI) 또는 .KQ (KOSDAQ) 접미사 필요
-    let yahooSymbol = symbol
-    const isKoreanStock = /^\d{6}$/.test(symbol)
-
-    // 한국 주식 코드 (6자리 숫자)
-    if (isKoreanStock) {
-      // KOSPI 종목으로 먼저 시도 (대부분)
-      yahooSymbol = `${symbol}.KS`
-    }
-
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`
+    const url = `https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:${stockCode}`
 
     const response = await fetch(url, {
       headers: {
@@ -151,38 +142,54 @@ async function fetchYahooPrice(symbol: string): Promise<StockPriceResult> {
     })
 
     if (!response.ok) {
-      // KOSDAQ 시도
-      if (yahooSymbol.endsWith('.KS')) {
-        return await tryKosdaqFallback(symbol)
-      }
       throw new Error(`HTTP ${response.status}`)
     }
 
-    const data = await response.json()
-    const result = parseYahooResponse(data, symbol)
-
-    // 한국 주식인 경우, 데이터가 오래되었으면 (7일 이상) KOSDAQ으로 재시도
-    if (isKoreanStock && result.success) {
-      const meta = data.chart?.result?.[0]?.meta
-      if (meta?.regularMarketTime) {
-        const marketTime = meta.regularMarketTime * 1000
-        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-        if (marketTime < sevenDaysAgo) {
-          // 데이터가 오래됨 - KOSDAQ 시도
-          const kosdaqResult = await tryKosdaqFallback(symbol)
-          // KOSDAQ 데이터가 더 최신이면 사용
-          if (kosdaqResult.success) {
-            return kosdaqResult
-          }
-        }
+    const data = await response.json() as {
+      resultCode: string
+      result: {
+        areas: Array<{
+          datas: Array<{
+            cd: string      // 종목코드
+            nm: string      // 종목명
+            nv: number      // 현재가 (now value)
+            cv: number      // 전일대비 (change value)
+            cr: number      // 등락률 (change rate)
+            pcv: number     // 전일종가 (previous close value)
+            ov: number      // 시가 (open value)
+            hv: number      // 고가 (high value)
+            lv: number      // 저가 (low value)
+            aq: number      // 거래량 (accumulated quantity)
+          }>
+        }>
       }
     }
 
-    return result
+    if (data.resultCode !== 'success') {
+      throw new Error('Naver API error')
+    }
+
+    const stockData = data.result?.areas?.[0]?.datas?.[0]
+    if (!stockData) {
+      throw new Error('No stock data')
+    }
+
+    return {
+      success: true,
+      stockCode: stockCode,
+      stockName: stockData.nm,
+      currentPrice: stockData.nv,
+      prevClose: stockData.pcv,
+      change: stockData.cv,
+      changePercent: stockData.cr,
+      currency: 'KRW',
+      timestamp: new Date().toISOString()
+    }
   } catch (error) {
+    console.error(`Naver API failed for ${stockCode}:`, error)
     return {
       success: false,
-      stockCode: symbol,
+      stockCode,
       currentPrice: 0,
       currency: 'KRW',
       timestamp: new Date().toISOString(),
@@ -191,21 +198,21 @@ async function fetchYahooPrice(symbol: string): Promise<StockPriceResult> {
   }
 }
 
-// KOSDAQ fallback 함수
-async function tryKosdaqFallback(symbol: string): Promise<StockPriceResult> {
+// Yahoo Finance API (미국 주식용)
+async function fetchYahooPrice(symbol: string): Promise<StockPriceResult> {
   try {
-    const yahooSymbol = `${symbol}.KQ`
-    const response = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`,
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
-    )
+    })
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
+
     const data = await response.json()
     return parseYahooResponse(data, symbol)
   } catch (error) {
@@ -213,7 +220,7 @@ async function tryKosdaqFallback(symbol: string): Promise<StockPriceResult> {
       success: false,
       stockCode: symbol,
       currentPrice: 0,
-      currency: 'KRW',
+      currency: 'USD',
       timestamp: new Date().toISOString(),
       error: error instanceof Error ? error.message : 'Unknown error'
     }
@@ -238,20 +245,15 @@ function parseYahooResponse(data: any, originalSymbol: string): StockPriceResult
     const change = currentPrice - previousClose
     const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
 
-    // 통화 결정
-    let currency = meta.currency || 'USD'
-    if (currency === 'KRW' || originalSymbol.match(/^\d{6}$/)) {
-      currency = 'KRW'
-    }
-
     return {
       success: true,
       stockCode: originalSymbol,
       stockName: meta.shortName || meta.symbol,
       currentPrice,
+      prevClose: previousClose,
       change,
       changePercent,
-      currency,
+      currency: meta.currency || 'USD',
       timestamp: new Date().toISOString()
     }
   } catch (error) {
@@ -259,7 +261,7 @@ function parseYahooResponse(data: any, originalSymbol: string): StockPriceResult
       success: false,
       stockCode: originalSymbol,
       currentPrice: 0,
-      currency: 'KRW',
+      currency: 'USD',
       timestamp: new Date().toISOString(),
       error: error instanceof Error ? error.message : 'Parse error'
     }
@@ -286,6 +288,9 @@ export async function fetchStockPrice(stockCode: string): Promise<StockPriceResu
     }
   }
 
+  // 한국 주식 여부 확인 (6자리 숫자)
+  const isKoreanStock = /^\d{6}$/.test(stockCode)
+
   const cached = stockPriceCache.get(stockCode)
 
   if (cached && Date.now() - cached.timestamp < STOCK_CACHE_TTL) {
@@ -293,12 +298,15 @@ export async function fetchStockPrice(stockCode: string): Promise<StockPriceResu
       success: true,
       stockCode,
       currentPrice: cached.price,
-      currency: /^\d{6}$/.test(stockCode) ? 'KRW' : 'USD',
+      currency: isKoreanStock ? 'KRW' : 'USD',
       timestamp: new Date(cached.timestamp).toISOString()
     }
   }
 
-  const result = await fetchYahooPrice(stockCode)
+  // 한국 주식: 네이버 금융, 미국 주식: Yahoo Finance
+  const result = isKoreanStock
+    ? await fetchNaverPrice(stockCode)
+    : await fetchYahooPrice(stockCode)
 
   if (result.success) {
     stockPriceCache.set(stockCode, {
@@ -346,8 +354,7 @@ export async function updateAllHoldingPrices(userId: string): Promise<BulkPriceR
 
       if (result.success && result.currentPrice > 0) {
         // DB 업데이트 (prev_close 포함)
-        // prev_close: 전일종가 (Yahoo Finance의 previousClose)
-        const prevClose = result.currentPrice - (result.change || 0)
+        const prevClose = result.prevClose || (result.currentPrice - (result.change || 0))
         db.prepare(`
           UPDATE holdings
           SET current_price = ?, prev_close = ?, last_synced = datetime('now')
