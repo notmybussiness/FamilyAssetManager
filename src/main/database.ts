@@ -169,6 +169,17 @@ function createTables(): void {
     )
   `)
 
+  // Ticker mappings table (수동 티커 매핑)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS ticker_mappings (
+      id TEXT PRIMARY KEY,
+      stock_name TEXT NOT NULL UNIQUE,
+      ticker TEXT NOT NULL,
+      market TEXT NOT NULL DEFAULT 'US',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+
   // Create indexes
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
@@ -180,6 +191,7 @@ function createTables(): void {
     CREATE INDEX IF NOT EXISTS idx_signals_strategy ON strategy_signals(strategy_id);
     CREATE INDEX IF NOT EXISTS idx_signals_status ON strategy_signals(status);
     CREATE INDEX IF NOT EXISTS idx_signals_holding ON strategy_signals(holding_id);
+    CREATE INDEX IF NOT EXISTS idx_ticker_mappings_name ON ticker_mappings(stock_name);
   `)
 
   console.log('Database tables created successfully')
@@ -198,6 +210,30 @@ function runMigrations(): void {
     }
   } catch (error) {
     console.error('Migration error:', error)
+  }
+
+  // 기본 티커 매핑 추가
+  try {
+    const defaultMappings = [
+      { name: 'Vanguard S&P 500 ETF', ticker: 'VOO', market: 'US' },
+      { name: 'SPDR S&P 500 ETF Trust', ticker: 'SPY', market: 'US' },
+      { name: 'Invesco QQQ Trust', ticker: 'QQQ', market: 'US' },
+      { name: 'iShares Core S&P 500 ETF', ticker: 'IVV', market: 'US' },
+      { name: 'Vanguard Total Stock Market ETF', ticker: 'VTI', market: 'US' }
+    ]
+
+    const insertStmt = database.prepare(`
+      INSERT OR IGNORE INTO ticker_mappings (id, stock_name, ticker, market)
+      VALUES (?, ?, ?, ?)
+    `)
+
+    for (const mapping of defaultMappings) {
+      const id = `default-${mapping.ticker.toLowerCase()}`
+      insertStmt.run(id, mapping.name, mapping.ticker, mapping.market)
+    }
+    console.log('Migration: Default ticker mappings added')
+  } catch (error) {
+    console.error('Ticker mapping migration error:', error)
   }
 }
 

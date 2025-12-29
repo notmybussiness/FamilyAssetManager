@@ -1356,6 +1356,60 @@ ipcMain.handle('strategy:dismissSignal', (_, signalId: string) => {
   return { success: true }
 })
 
+// ===== TICKER MAPPING HANDLERS =====
+
+// 모든 매핑 조회
+ipcMain.handle('tickerMapping:getAll', () => {
+  const db = getDatabase()
+  return db.prepare('SELECT * FROM ticker_mappings ORDER BY stock_name').all()
+})
+
+// 매핑 추가
+ipcMain.handle('tickerMapping:create', async (_, data: { stock_name: string; ticker: string; market: string }) => {
+  const db = getDatabase()
+  const { v4: uuidv4 } = await import('uuid')
+  const id = uuidv4()
+  db.prepare(`
+    INSERT INTO ticker_mappings (id, stock_name, ticker, market)
+    VALUES (?, ?, ?, ?)
+  `).run(id, data.stock_name, data.ticker, data.market)
+  return { success: true, id }
+})
+
+// 매핑 수정
+ipcMain.handle('tickerMapping:update', (_, id: string, data: { ticker: string; market: string }) => {
+  const db = getDatabase()
+  db.prepare(`
+    UPDATE ticker_mappings SET ticker = ?, market = ? WHERE id = ?
+  `).run(data.ticker, data.market, id)
+  return { success: true }
+})
+
+// 매핑 삭제
+ipcMain.handle('tickerMapping:delete', (_, id: string) => {
+  const db = getDatabase()
+  db.prepare('DELETE FROM ticker_mappings WHERE id = ?').run(id)
+  return { success: true }
+})
+
+// 조회 실패 종목 목록
+ipcMain.handle('tickerMapping:getFailedStocks', (_, userId: string) => {
+  const db = getDatabase()
+  return db.prepare(`
+    SELECT DISTINCT
+      h.stock_code,
+      h.stock_name,
+      h.currency,
+      h.current_price,
+      h.last_synced
+    FROM holdings h
+    JOIN accounts a ON h.account_id = a.id
+    WHERE a.user_id = ?
+      AND h.current_price = 0
+    ORDER BY h.stock_name
+  `).all(userId)
+})
+
 // ===== DIVIDEND ANALYSIS HANDLERS =====
 
 // 월별 배당금 집계

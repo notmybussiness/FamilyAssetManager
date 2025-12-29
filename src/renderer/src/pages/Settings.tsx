@@ -12,17 +12,33 @@ interface User {
   is_primary: number
 }
 
-export default function Settings(): JSX.Element {
+interface TickerMapping {
+  id: string
+  stock_name: string
+  ticker: string
+  market: string
+  created_at: string
+}
+
+interface SettingsProps {
+  userId: string
+}
+
+export default function Settings({ userId }: SettingsProps): JSX.Element {
   const [usdKrw, setUsdKrw] = useState<ExchangeRate | null>(null)
   const [manualRate, setManualRate] = useState('')
   const [loading, setLoading] = useState(true)
   const [users, setUsers] = useState<User[]>([])
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [editName, setEditName] = useState('')
+  const [mappings, setMappings] = useState<TickerMapping[]>([])
+  const [newMapping, setNewMapping] = useState({ stock_name: '', ticker: '', market: 'US' })
+  const [showAddMapping, setShowAddMapping] = useState(false)
 
   useEffect(() => {
     loadExchangeRate()
     loadUsers()
+    loadMappings()
   }, [])
 
   const loadUsers = async () => {
@@ -99,6 +115,48 @@ export default function Settings(): JSX.Element {
       alert('사용자가 삭제되었습니다')
     } catch (error) {
       alert('사용자 삭제에 실패했습니다')
+    }
+  }
+
+  const loadMappings = async () => {
+    try {
+      const data = await window.api.tickerMapping.getAll()
+      setMappings(data)
+    } catch (error) {
+      console.error('Failed to load mappings:', error)
+    }
+  }
+
+  const handleAddMapping = async () => {
+    if (!newMapping.stock_name.trim() || !newMapping.ticker.trim()) {
+      alert('종목명과 티커를 입력해주세요')
+      return
+    }
+
+    try {
+      await window.api.tickerMapping.create({
+        stock_name: newMapping.stock_name.trim(),
+        ticker: newMapping.ticker.trim().toUpperCase(),
+        market: newMapping.market
+      })
+      setNewMapping({ stock_name: '', ticker: '', market: 'US' })
+      setShowAddMapping(false)
+      loadMappings()
+    } catch (error) {
+      alert('매핑 추가에 실패했습니다')
+    }
+  }
+
+  const handleDeleteMapping = async (id: string, stockName: string) => {
+    if (!confirm(`"${stockName}" 매핑을 삭제하시겠습니까?`)) {
+      return
+    }
+
+    try {
+      await window.api.tickerMapping.delete(id)
+      loadMappings()
+    } catch (error) {
+      alert('매핑 삭제에 실패했습니다')
     }
   }
 
@@ -213,6 +271,91 @@ export default function Settings(): JSX.Element {
             </p>
           )}
         </div>
+      </div>
+
+      {/* Ticker Mapping Section */}
+      <div className="card mt-2" style={{ maxWidth: '800px' }}>
+        <div className="card-header">
+          <h3 className="card-title">티커 매핑 관리</h3>
+          <button className="btn btn-sm btn-primary" onClick={() => setShowAddMapping(!showAddMapping)}>
+            {showAddMapping ? '취소' : '+ 매핑 추가'}
+          </button>
+        </div>
+
+        <p className="text-muted mt-2" style={{ fontSize: '0.85rem' }}>
+          시세 조회에 실패하는 종목(ETF 전체 이름 등)에 실제 티커를 매핑합니다.
+        </p>
+
+        {showAddMapping && (
+          <div className="form-row mt-2" style={{ gap: '0.5rem', alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
+              <label>종목명 (DB에 저장된 이름)</label>
+              <input
+                type="text"
+                value={newMapping.stock_name}
+                onChange={(e) => setNewMapping({ ...newMapping, stock_name: e.target.value })}
+                placeholder="예: Vanguard S&P 500 ETF"
+              />
+            </div>
+            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+              <label>티커</label>
+              <input
+                type="text"
+                value={newMapping.ticker}
+                onChange={(e) => setNewMapping({ ...newMapping, ticker: e.target.value })}
+                placeholder="예: VOO"
+              />
+            </div>
+            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+              <label>시장</label>
+              <select
+                value={newMapping.market}
+                onChange={(e) => setNewMapping({ ...newMapping, market: e.target.value })}
+              >
+                <option value="US">미국 (US)</option>
+                <option value="KR_KOSPI">한국 (KOSPI)</option>
+                <option value="KR_KOSDAQ">한국 (KOSDAQ)</option>
+              </select>
+            </div>
+            <button className="btn btn-primary" onClick={handleAddMapping} style={{ marginBottom: 0 }}>
+              추가
+            </button>
+          </div>
+        )}
+
+        {mappings.length > 0 ? (
+          <div className="table-container mt-2">
+            <table>
+              <thead>
+                <tr>
+                  <th>종목명</th>
+                  <th>티커</th>
+                  <th>시장</th>
+                  <th style={{ width: '80px' }}>관리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mappings.map((mapping) => (
+                  <tr key={mapping.id}>
+                    <td>{mapping.stock_name}</td>
+                    <td><code>{mapping.ticker}</code></td>
+                    <td>{mapping.market}</td>
+                    <td>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => handleDeleteMapping(mapping.id, mapping.stock_name)}
+                      >
+                        삭제
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-muted mt-2">등록된 매핑이 없습니다.</p>
+        )}
       </div>
 
       <div className="card mt-2" style={{ maxWidth: '600px' }}>

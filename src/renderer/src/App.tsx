@@ -94,7 +94,7 @@ function App(): JSX.Element {
         <Route path="/import" element={<Import userId={currentUserId!} />} />
         <Route path="/accounts" element={<Accounts userId={currentUserId!} />} />
         <Route path="/signals" element={<TradingSignals userId={currentUserId!} />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/settings" element={<Settings userId={currentUserId!} />} />
       </Routes>
     </Layout>
   )

@@ -157,6 +157,18 @@ const api = {
       ipcRenderer.invoke('dividend:getYearlyStats', userId)
   },
 
+  // Ticker Mapping APIs
+  tickerMapping: {
+    getAll: () => ipcRenderer.invoke('tickerMapping:getAll'),
+    create: (data: { stock_name: string; ticker: string; market: string }) =>
+      ipcRenderer.invoke('tickerMapping:create', data),
+    update: (id: string, data: { ticker: string; market: string }) =>
+      ipcRenderer.invoke('tickerMapping:update', id, data),
+    delete: (id: string) => ipcRenderer.invoke('tickerMapping:delete', id),
+    getFailedStocks: (userId: string) =>
+      ipcRenderer.invoke('tickerMapping:getFailedStocks', userId)
+  },
+
   // Trading Strategy APIs (5% 그리드 전략)
   strategy: {
     getAll: (userId: string) =>

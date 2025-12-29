@@ -335,6 +335,22 @@ interface YearlyDividendStat {
   count: number
 }
 
+interface TickerMapping {
+  id: string
+  stock_name: string
+  ticker: string
+  market: string
+  created_at: string
+}
+
+interface FailedStock {
+  stock_code: string
+  stock_name: string
+  currency: string
+  current_price: number
+  last_synced: string | null
+}
+
 interface API {
   stock: {
     search: (userId: string, query: string) => Promise<StockSearchResult[]>
@@ -343,6 +359,13 @@ interface API {
     getMonthlyStats: (userId: string, year: number) => Promise<MonthlyDividendStat[]>
     getByStock: (userId: string) => Promise<StockDividendStat[]>
     getYearlyStats: (userId: string) => Promise<YearlyDividendStat[]>
+  }
+  tickerMapping: {
+    getAll: () => Promise<TickerMapping[]>
+    create: (data: { stock_name: string; ticker: string; market: string }) => Promise<{ success: boolean; id: string }>
+    update: (id: string, data: { ticker: string; market: string }) => Promise<{ success: boolean }>
+    delete: (id: string) => Promise<{ success: boolean }>
+    getFailedStocks: (userId: string) => Promise<FailedStock[]>
   }
   user: {
     getAll: () => Promise<User[]>

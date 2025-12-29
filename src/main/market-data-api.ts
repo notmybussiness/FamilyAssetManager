@@ -352,8 +352,38 @@ const isStandardKoreanCode = (code: string): boolean => /^\d{6}$/.test(code)
 // 미국 티커 패턴 (영문 대문자 1-5자리)
 const isUSTickerPattern = (code: string): boolean => /^[A-Z]{1,5}$/.test(code)
 
+// 티커 매핑 테이블에서 조회
+function getTickerMapping(stockName: string): { ticker: string; market: string } | null {
+  try {
+    const db = getDatabase()
+    const mapping = db.prepare(
+      'SELECT ticker, market FROM ticker_mappings WHERE stock_name = ?'
+    ).get(stockName) as { ticker: string; market: string } | undefined
+    return mapping || null
+  } catch (error) {
+    console.error('Failed to get ticker mapping:', error)
+    return null
+  }
+}
+
 export async function fetchStockPrice(stockCode: string, stockName?: string, currency?: string): Promise<StockPriceResult> {
   console.log(`[fetchStockPrice] 시작: code="${stockCode}", name="${stockName || ''}", currency="${currency || ''}"`)
+
+  // 1. 먼저 ticker_mappings 테이블에서 매핑 확인
+  if (stockName) {
+    const mapping = getTickerMapping(stockName)
+    if (mapping) {
+      console.log(`[fetchStockPrice] 매핑 발견: "${stockName}" → ${mapping.ticker} (${mapping.market})`)
+      const result = await fetchYahooPrice(mapping.ticker)
+      if (result.success) {
+        result.stockCode = stockCode  // 원래 코드 유지
+        result.stockName = stockName  // 원래 이름 유지
+        stockPriceCache.set(stockCode, { price: result.currentPrice, timestamp: Date.now() })
+        console.log(`[fetchStockPrice] ✅ 매핑 성공: "${stockName}" → $${result.currentPrice}`)
+        return result
+      }
+    }
+  }
 
   // HSBC 등 조회 제외 종목
   if (SKIP_STOCK_CODES.some(skip => stockCode.toUpperCase().includes(skip.toUpperCase()))) {
