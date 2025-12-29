@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import PortfolioCharts from '../components/PortfolioCharts'
 
 interface PortfolioSummary {
   totalMarketValue: number
@@ -234,6 +235,12 @@ export default function Dashboard({ userId }: DashboardProps): JSX.Element {
               </div>
             </div>
           )}
+
+          {/* Portfolio Charts */}
+          <PortfolioCharts
+            byAccountType={summary.byAccountType}
+            byBrokerage={summary.byBrokerage}
+          />
 
           {/* Breakdown Cards */}
           <div className="stats-grid">
