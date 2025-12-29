@@ -782,6 +782,28 @@ ipcMain.handle('holding:getAllAggregated', () => {
   `).all()
 })
 
+// 종목 검색 (자동완성용)
+ipcMain.handle('stock:search', (_, userId: string, query: string) => {
+  const db = getDatabase()
+  const searchQuery = `%${query}%`
+  return db.prepare(`
+    SELECT DISTINCT
+      h.stock_code,
+      h.stock_name,
+      h.currency,
+      MAX(h.current_price) as current_price
+    FROM holdings h
+    JOIN accounts a ON h.account_id = a.id
+    WHERE a.user_id = ?
+      AND (h.stock_code LIKE ? OR h.stock_name LIKE ?)
+    GROUP BY h.stock_code, h.stock_name, h.currency
+    ORDER BY
+      CASE WHEN h.stock_code LIKE ? THEN 0 ELSE 1 END,
+      h.stock_name
+    LIMIT 10
+  `).all(userId, searchQuery, searchQuery, query + '%')
+})
+
 // 사용자별 통합 보유종목 (prev_close 포함)
 ipcMain.handle('holding:getByUserWithChange', (_, userId: string) => {
   const db = getDatabase()

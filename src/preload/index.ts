@@ -28,6 +28,11 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke('account:delete', id)
   },
 
+  // Stock Search API (자동완성용)
+  stock: {
+    search: (userId: string, query: string) => ipcRenderer.invoke('stock:search', userId, query)
+  },
+
   // Holding APIs
   holding: {
     getByAccount: (accountId: string) => ipcRenderer.invoke('holding:getByAccount', accountId),

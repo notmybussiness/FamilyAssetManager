@@ -904,42 +904,92 @@ select option:hover {
   background: var(--primary);
 }
 
+/* Autocomplete Container */
+.autocomplete-container {
+  position: relative;
+}
+
 /* Autocomplete dropdown */
 .autocomplete-dropdown {
   position: absolute;
   top: 100%;
   left: 0;
   right: 0;
-  background: var(--card-bg);
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
+  backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  max-height: 200px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  max-height: 280px;
   overflow-y: auto;
   z-index: 1000;
   margin-top: 4px;
+  padding: 0;
+  list-style: none;
 }
 
 .autocomplete-item {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   padding: 0.75rem 1rem;
   cursor: pointer;
   border-bottom: 1px solid var(--glass-border);
-  transition: background-color 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 .autocomplete-item:last-child {
   border-bottom: none;
 }
 
-.autocomplete-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+.autocomplete-item:hover,
+.autocomplete-item.highlighted {
+  background: rgba(59, 130, 246, 0.15);
 }
 
-.autocomplete-item strong {
-  color: var(--primary);
-  min-width: 80px;
+.autocomplete-item-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.autocomplete-item-main .stock-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.autocomplete-item-main .stock-code {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.autocomplete-item-sub {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.autocomplete-item-sub .stock-price {
+  color: var(--text-secondary);
+}
+
+.autocomplete-item-sub .stock-currency {
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.autocomplete-item-sub .stock-currency.usd {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+}
+
+.autocomplete-item-sub .stock-currency.krw {
+  background: rgba(59, 130, 246, 0.2);
+  color: var(--primary-light);
 }
 
 /* Warning box */

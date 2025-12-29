@@ -302,7 +302,17 @@ interface ExecuteSignalResult {
   price: number
 }
 
+interface StockSearchResult {
+  stock_code: string
+  stock_name: string
+  currency: string
+  current_price: number
+}
+
 interface API {
+  stock: {
+    search: (userId: string, query: string) => Promise<StockSearchResult[]>
+  }
   user: {
     getAll: () => Promise<User[]>
     create: (data: { name: string; is_primary?: boolean }) => Promise<User>

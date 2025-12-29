@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import StockAutocomplete from '../components/StockAutocomplete'
 
 interface Account {
   id: string
@@ -318,16 +319,20 @@ export default function Transactions({ userId }: TransactionsProps): JSX.Element
               </div>
 
               <div className="form-row">
-                <div className="form-group">
-                  <label>종목코드 *</label>
-                  <input
-                    type="text"
-                    value={formData.stock_code}
-                    onChange={(e) => setFormData({ ...formData, stock_code: e.target.value })}
-                    placeholder="예: 005930"
-                    required
-                  />
-                </div>
+                <StockAutocomplete
+                  userId={userId}
+                  value={formData.stock_code}
+                  onChange={(value) => setFormData({ ...formData, stock_code: value })}
+                  onSelect={(stock) => setFormData({
+                    ...formData,
+                    stock_code: stock.stock_code,
+                    stock_name: stock.stock_name,
+                    currency: stock.currency
+                  })}
+                  label="종목코드"
+                  placeholder="종목코드 또는 종목명 검색"
+                  required
+                />
 
                 <div className="form-group">
                   <label>종목명</label>
