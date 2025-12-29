@@ -309,9 +309,40 @@ interface StockSearchResult {
   current_price: number
 }
 
+interface MonthlyDividendStat {
+  month: string
+  amount: number
+  count: number
+}
+
+interface StockDividendStat {
+  stock_code: string
+  stock_name: string
+  currency: string
+  total_dividends: number
+  dividend_count: number
+  first_dividend: string
+  last_dividend: string
+  current_quantity: number | null
+  avg_cost: number | null
+  current_price: number | null
+  dividend_yield: number
+}
+
+interface YearlyDividendStat {
+  year: string
+  amount: number
+  count: number
+}
+
 interface API {
   stock: {
     search: (userId: string, query: string) => Promise<StockSearchResult[]>
+  }
+  dividend: {
+    getMonthlyStats: (userId: string, year: number) => Promise<MonthlyDividendStat[]>
+    getByStock: (userId: string) => Promise<StockDividendStat[]>
+    getYearlyStats: (userId: string) => Promise<YearlyDividendStat[]>
   }
   user: {
     getAll: () => Promise<User[]>

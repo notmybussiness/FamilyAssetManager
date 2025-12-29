@@ -1275,3 +1275,35 @@ select option:hover {
   background: var(--gradient-primary);
   color: white;
 }
+
+/* Dividend Analysis */
+.dividend-analysis {
+  margin-bottom: 2rem;
+}
+
+.dividend-summary {
+  display: flex;
+  gap: 2rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: var(--glass-bg);
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+}
+
+.dividend-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dividend-stat .stat-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.dividend-stat .stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--success);
+}

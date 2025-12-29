@@ -1356,6 +1356,73 @@ ipcMain.handle('strategy:dismissSignal', (_, signalId: string) => {
   return { success: true }
 })
 
+// ===== DIVIDEND ANALYSIS HANDLERS =====
+
+// 월별 배당금 집계
+ipcMain.handle('dividend:getMonthlyStats', (_, userId: string, year: number) => {
+  const db = getDatabase()
+  return db.prepare(`
+    SELECT
+      strftime('%m', t.date) as month,
+      SUM(t.total_amount) as amount,
+      COUNT(*) as count
+    FROM transactions t
+    JOIN accounts a ON t.account_id = a.id
+    WHERE a.user_id = ?
+      AND t.type = 'DIVIDEND'
+      AND strftime('%Y', t.date) = ?
+    GROUP BY strftime('%m', t.date)
+    ORDER BY month
+  `).all(userId, year.toString())
+})
+
+// 종목별 배당금 합계 및 배당수익률
+ipcMain.handle('dividend:getByStock', (_, userId: string) => {
+  const db = getDatabase()
+  return db.prepare(`
+    SELECT
+      t.stock_code,
+      t.stock_name,
+      t.currency,
+      SUM(t.total_amount) as total_dividends,
+      COUNT(*) as dividend_count,
+      MIN(t.date) as first_dividend,
+      MAX(t.date) as last_dividend,
+      h.quantity as current_quantity,
+      h.avg_cost,
+      h.current_price,
+      CASE
+        WHEN h.quantity > 0 AND h.avg_cost > 0
+        THEN (SUM(t.total_amount) / (h.quantity * h.avg_cost)) * 100
+        ELSE 0
+      END as dividend_yield
+    FROM transactions t
+    JOIN accounts a ON t.account_id = a.id
+    LEFT JOIN holdings h ON h.account_id = t.account_id AND h.stock_code = t.stock_code
+    WHERE a.user_id = ?
+      AND t.type = 'DIVIDEND'
+    GROUP BY t.stock_code, t.stock_name, t.currency
+    ORDER BY total_dividends DESC
+  `).all(userId)
+})
+
+// 연도별 배당금 합계
+ipcMain.handle('dividend:getYearlyStats', (_, userId: string) => {
+  const db = getDatabase()
+  return db.prepare(`
+    SELECT
+      strftime('%Y', t.date) as year,
+      SUM(t.total_amount) as amount,
+      COUNT(*) as count
+    FROM transactions t
+    JOIN accounts a ON t.account_id = a.id
+    WHERE a.user_id = ?
+      AND t.type = 'DIVIDEND'
+    GROUP BY strftime('%Y', t.date)
+    ORDER BY year DESC
+  `).all(userId)
+})
+
 // Get signal history
 ipcMain.handle('strategy:getSignalHistory', (_, userId: string, limit: number = 50) => {
   const db = getDatabase()

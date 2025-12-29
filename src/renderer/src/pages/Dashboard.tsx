@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import PortfolioCharts from '../components/PortfolioCharts'
+import DividendAnalysis from '../components/DividendAnalysis'
 
 interface PortfolioSummary {
   totalMarketValue: number
@@ -306,6 +307,9 @@ export default function Dashboard({ userId }: DashboardProps): JSX.Element {
               </table>
             </div>
           </div>
+
+          {/* Dividend Analysis */}
+          <DividendAnalysis userId={userId} />
 
           {/* Top Holdings */}
           <div className="card">

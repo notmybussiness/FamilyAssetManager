@@ -147,6 +147,16 @@ const api = {
     clearCache: () => ipcRenderer.invoke('marketData:clearCache')
   },
 
+  // Dividend Analysis APIs
+  dividend: {
+    getMonthlyStats: (userId: string, year: number) =>
+      ipcRenderer.invoke('dividend:getMonthlyStats', userId, year),
+    getByStock: (userId: string) =>
+      ipcRenderer.invoke('dividend:getByStock', userId),
+    getYearlyStats: (userId: string) =>
+      ipcRenderer.invoke('dividend:getYearlyStats', userId)
+  },
+
   // Trading Strategy APIs (5% 그리드 전략)
   strategy: {
     getAll: (userId: string) =>
