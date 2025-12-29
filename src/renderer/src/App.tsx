@@ -7,6 +7,7 @@ import Transactions from './pages/Transactions'
 import Holdings from './pages/Holdings'
 import Import from './pages/Import'
 import Settings from './pages/Settings'
+import TradingSignals from './pages/TradingSignals'
 
 interface User {
   id: string
@@ -92,6 +93,7 @@ function App(): JSX.Element {
         <Route path="/transactions" element={<Transactions userId={currentUserId!} />} />
         <Route path="/import" element={<Import userId={currentUserId!} />} />
         <Route path="/accounts" element={<Accounts userId={currentUserId!} />} />
+        <Route path="/signals" element={<TradingSignals userId={currentUserId!} />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

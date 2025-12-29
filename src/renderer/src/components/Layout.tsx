@@ -99,6 +99,10 @@ export default function Layout({
             <span className="nav-icon">🏦</span>
             계좌관리
           </NavLink>
+          <NavLink to="/signals" className={({ isActive }) => (isActive ? 'active' : '')}>
+            <span className="nav-icon">📈</span>
+            매매 신호
+          </NavLink>
           <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
             <span className="nav-icon">⚙️</span>
             설정
