@@ -128,6 +128,58 @@ export async function fetchExchangeRate(from: string = 'USD', to: string = 'KRW'
   }
 }
 
+// ===== 종목코드 검색 (이름 → 코드) =====
+const stockCodeCache: Map<string, string> = new Map()
+
+async function searchStockCode(stockName: string): Promise<string | null> {
+  // 캐시 확인
+  const cached = stockCodeCache.get(stockName)
+  if (cached) return cached
+
+  try {
+    // 네이버 금융 검색 API
+    const url = `https://ac.stock.naver.com/ac?q=${encodeURIComponent(stockName)}&target=stock`
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    })
+
+    if (!response.ok) return null
+
+    const data = await response.json() as {
+      query: string
+      items: Array<{
+        code: string
+        name: string
+        typeCode: string  // 'KOSPI', 'KOSDAQ' 등
+      }>
+    }
+
+    // 결과에서 정확히 매칭되는 종목 찾기
+    const items = data.items || []
+    for (const item of items) {
+      // 정확히 일치하거나, 공백 제거 후 일치
+      if (item.name === stockName || item.name.replace(/\s/g, '') === stockName.replace(/\s/g, '')) {
+        stockCodeCache.set(stockName, item.code)
+        return item.code
+      }
+    }
+
+    // 정확히 일치하지 않으면 첫 번째 결과 사용
+    if (items.length > 0) {
+      stockCodeCache.set(stockName, items[0].code)
+      return items[0].code
+    }
+
+    return null
+  } catch (error) {
+    console.error(`Failed to search stock code for ${stockName}:`, error)
+    return null
+  }
+}
+
 // ===== 주식 현재가 API =====
 
 // 네이버 금융 API (한국 주식용 - 안정적)
@@ -282,6 +334,7 @@ const STOCK_CACHE_TTL = 1 * 60 * 1000 // 1분
 const SKIP_STOCK_CODES = ['HSBC', 'HSBC.L', 'HSBC.N']
 
 export async function fetchStockPrice(stockCode: string): Promise<StockPriceResult> {
+
   // HSBC 등 조회 제외 종목
   if (SKIP_STOCK_CODES.some(skip => stockCode.toUpperCase().includes(skip.toUpperCase()))) {
     return {
@@ -294,8 +347,32 @@ export async function fetchStockPrice(stockCode: string): Promise<StockPriceResu
     }
   }
 
-  // 한국 주식 여부 확인 (6자리 숫자)
-  const isKoreanStock = /^\d{6}$/.test(stockCode)
+  // 한국 주식 여부 확인
+  // - 6자리 숫자: 일반 주식/ETF (005930, 360750 등)
+  // - 00XXX0 패턴: 신규 ETF (0052D0, 0008S0 등)
+  const isKoreanCode = (code: string): boolean =>
+    /^\d{6}$/.test(code) || /^0[0-9]{2}[0-9A-Z]{2}0$/.test(code)
+
+  let isKoreanStock = isKoreanCode(stockCode)
+  let actualCode = stockCode
+
+  // 한국 코드가 아니고, 한글이 포함된 경우 → 종목명으로 판단하여 코드 검색
+  if (!isKoreanStock && /[가-힣]/.test(stockCode)) {
+    const foundCode = await searchStockCode(stockCode)
+    if (foundCode) {
+      actualCode = foundCode
+      isKoreanStock = isKoreanCode(foundCode)
+    } else {
+      return {
+        success: false,
+        stockCode,
+        currentPrice: 0,
+        currency: 'KRW',
+        timestamp: new Date().toISOString(),
+        error: 'Stock code not found'
+      }
+    }
+  }
 
   const cached = stockPriceCache.get(stockCode)
 
@@ -311,8 +388,11 @@ export async function fetchStockPrice(stockCode: string): Promise<StockPriceResu
 
   // 한국 주식: 네이버 금융, 미국 주식: Yahoo Finance
   const result = isKoreanStock
-    ? await fetchNaverPrice(stockCode)
-    : await fetchYahooPrice(stockCode)
+    ? await fetchNaverPrice(actualCode)
+    : await fetchYahooPrice(actualCode)
+
+  // 원래 stockCode로 결과 반환 (DB 키와 일치시키기 위해)
+  result.stockCode = stockCode
 
   if (result.success) {
     stockPriceCache.set(stockCode, {
