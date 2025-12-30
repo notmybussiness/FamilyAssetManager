@@ -52,3 +52,13 @@ coverage/
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Claude Code
+.claude/
+
+# Docs
+docs/
+
+# Playwright
+playwright-report/
+test-results/
