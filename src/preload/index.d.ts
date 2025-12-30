@@ -444,6 +444,7 @@ interface API {
   requestRefresh: () => void
   import: {
     selectFile: () => Promise<{ success: boolean; canceled?: boolean; filePath?: string }>
+    selectMultipleFiles: () => Promise<{ success: boolean; canceled?: boolean; filePaths: string[] }>
     parseFile: (filePath: string) => Promise<ImportResult>
     execute: (accountId: string, rows: ImportRow[], overwrite?: boolean) => Promise<ImportExecuteResult>
     getTemplate: () => Promise<{
@@ -467,7 +468,7 @@ interface API {
     getLastSync: (accountId: string) => Promise<SyncLog | null>
   }
   marketData: {
-    getExchangeRate: (from: string, to: string) => Promise<ExchangeRateResult>
+    getExchangeRate: (from: string, to: string, forceRefresh?: boolean) => Promise<ExchangeRateResult>
     getStockPrice: (stockCode: string) => Promise<StockPriceResult>
     updateStockPrice: (stockCode: string) => Promise<StockPriceResult>
     refreshAll: (userId: string) => Promise<BulkPriceResult>

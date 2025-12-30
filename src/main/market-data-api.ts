@@ -41,12 +41,13 @@ const FRANKFURTER_API = 'https://api.frankfurter.app'
 const exchangeRateCache: Map<string, { rate: number; timestamp: number }> = new Map()
 const CACHE_TTL = 5 * 60 * 1000 // 5분
 
-export async function fetchExchangeRate(from: string = 'USD', to: string = 'KRW'): Promise<ExchangeRateResult> {
+export async function fetchExchangeRate(from: string = 'USD', to: string = 'KRW', forceRefresh: boolean = false): Promise<ExchangeRateResult> {
   const pair = `${from}/${to}`
   const cacheKey = pair
   const cached = exchangeRateCache.get(cacheKey)
 
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  // 강제 새로고침이 아닐 때만 캐시 사용
+  if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return {
       success: true,
       pair,
@@ -348,9 +349,6 @@ const SKIP_STOCK_CODES = ['HSBC', 'HSBC.L', 'HSBC.N']
 
 // 6자리 숫자 코드인지 확인 (한국 주식 표준)
 const isStandardKoreanCode = (code: string): boolean => /^\d{6}$/.test(code)
-
-// 미국 티커 패턴 (영문 대문자 1-5자리)
-const isUSTickerPattern = (code: string): boolean => /^[A-Z]{1,5}$/.test(code)
 
 // 티커 매핑 테이블에서 조회
 function getTickerMapping(stockName: string): { ticker: string; market: string } | null {

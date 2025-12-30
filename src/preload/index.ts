@@ -97,6 +97,7 @@ const api = {
   // Excel Import APIs
   import: {
     selectFile: () => ipcRenderer.invoke('import:selectFile'),
+    selectMultipleFiles: () => ipcRenderer.invoke('import:selectMultipleFiles'),
     parseFile: (filePath: string) => ipcRenderer.invoke('import:parseFile', filePath),
     execute: (accountId: string, rows: Array<{
       date: string
@@ -136,8 +137,8 @@ const api = {
 
   // Market Data APIs (실시간 환율/현재가)
   marketData: {
-    getExchangeRate: (from: string, to: string) =>
-      ipcRenderer.invoke('marketData:getExchangeRate', from, to),
+    getExchangeRate: (from: string, to: string, forceRefresh?: boolean) =>
+      ipcRenderer.invoke('marketData:getExchangeRate', from, to, forceRefresh),
     getStockPrice: (stockCode: string) =>
       ipcRenderer.invoke('marketData:getStockPrice', stockCode),
     updateStockPrice: (stockCode: string) =>

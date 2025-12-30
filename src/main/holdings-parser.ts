@@ -298,6 +298,37 @@ function parseNumber(value: unknown): number {
   return isNaN(num) ? 0 : num
 }
 
+// 가격 비율로 USD 자동 감지 (500배 기준)
+// 이유: 환율 1:1400 기준, 반토막 나도 700배 → 500배 기준으로 안전하게 판단
+export function detectCurrencyByPriceRatio(
+  avgPrice: number,
+  currentPrice: number,
+  providedCurrency?: string
+): string {
+  // 이미 명시적으로 USD가 지정되어 있으면 그대로
+  if (providedCurrency === 'USD') return 'USD'
+
+  // 가격이 0이면 판단 불가 → 기본값 KRW
+  if (avgPrice <= 0 || currentPrice <= 0) return providedCurrency || 'KRW'
+
+  // 비율 계산
+  const ratio = currentPrice / avgPrice
+
+  // 500배 이상이면 USD로 판단
+  // 이유: 원화 기준 현재가와 달러 기준 평균단가 혼재
+  if (ratio >= 500) {
+    return 'USD'
+  }
+
+  // 역비율도 체크 (평균단가가 원화, 현재가가 달러인 경우)
+  const reverseRatio = avgPrice / currentPrice
+  if (reverseRatio >= 500) {
+    return 'USD'
+  }
+
+  return providedCurrency || 'KRW'
+}
+
 // 종목코드 정규화
 function normalizeStockCode(code: string | undefined, name: string): string {
   if (!code) {
@@ -674,6 +705,18 @@ export function parseHoldingsFile(filePath: string): HoldingsImportResult {
       default:
         result.errors.push('알 수 없는 파일 형식입니다')
         return result
+    }
+
+    // 후처리: 500배 기준 USD 자동 감지
+    // currency가 KRW인데 가격 비율이 500배 이상이면 USD로 변경
+    for (const h of holdings) {
+      if (h.currency !== 'USD' && h.avgPrice > 0 && h.currentPrice > 0) {
+        const correctedCurrency = detectCurrencyByPriceRatio(h.avgPrice, h.currentPrice, h.currency)
+        if (correctedCurrency === 'USD' && h.currency !== 'USD') {
+          h.currency = 'USD'
+          h.market = 'US'
+        }
+      }
     }
 
     result.holdings = holdings

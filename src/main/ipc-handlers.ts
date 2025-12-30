@@ -475,6 +475,24 @@ export function registerIpcHandlers(): void {
     return { success: true, filePath: result.filePaths[0] }
   })
 
+  // 다중 파일 선택
+  ipcMain.handle('import:selectMultipleFiles', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '여러 엑셀 파일 선택',
+      filters: [
+        { name: 'Excel Files', extensions: ['xlsx', 'xls', 'csv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile', 'multiSelections']
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true, filePaths: [] }
+    }
+
+    return { success: true, filePaths: result.filePaths }
+  })
+
   ipcMain.handle('import:parseFile', (_, filePath: string) => {
     return parseExcelFile(filePath)
   })
@@ -635,9 +653,9 @@ export function registerIpcHandlers(): void {
   })
 
   // ===== MARKET DATA HANDLERS =====
-  // 환율 조회
-  ipcMain.handle('marketData:getExchangeRate', async (_, from: string, to: string) => {
-    return await fetchExchangeRate(from, to)
+  // 환율 조회 (forceRefresh: 캐시 무시하고 강제 새로고침)
+  ipcMain.handle('marketData:getExchangeRate', async (_, from: string, to: string, forceRefresh?: boolean) => {
+    return await fetchExchangeRate(from, to, forceRefresh ?? false)
   })
 
   // 단일 종목 현재가 조회
@@ -691,14 +709,15 @@ ipcMain.handle('import:saveHoldings', (_, accountId: string, holdings: ParsedHol
     for (const h of holdings) {
       if (!h.isValid) continue
 
-      const stockCode = h.stockCode || h.stockName  // 종목코드 없으면 종목명 사용
+      // stock_code 정규화 (공백 제거, 종목코드 없으면 종목명 사용)
+      const stockCode = (h.stockCode || h.stockName).trim()
       const existing = checkExisting.get(accountId, stockCode)
 
       upsertStmt.run(
         existing ? (existing as { id: string }).id : uuidv4(),
         accountId,
         stockCode,
-        h.stockName,
+        h.stockName.trim(),
         h.quantity,
         h.avgPrice,
         h.currentPrice,
@@ -734,22 +753,30 @@ ipcMain.handle('import:replaceHoldings', (_, accountId: string, holdings: Parsed
     // 기존 보유종목 삭제
     db.prepare('DELETE FROM holdings WHERE account_id = ?').run(accountId)
 
-    // 새로 저장
+    // 새로 저장 (같은 종목이 여러 번 나오면 마지막 값으로 덮어쓰기)
     const insertStmt = db.prepare(`
       INSERT INTO holdings (id, account_id, stock_code, stock_name, quantity, avg_cost, current_price, currency, last_synced)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(account_id, stock_code) DO UPDATE SET
+        stock_name = excluded.stock_name,
+        quantity = excluded.quantity,
+        avg_cost = excluded.avg_cost,
+        current_price = excluded.current_price,
+        currency = excluded.currency,
+        last_synced = datetime('now')
     `)
 
     let imported = 0
     for (const h of holdings) {
       if (!h.isValid) continue
 
-      const stockCode = h.stockCode || h.stockName
+      // stock_code 정규화 (공백 제거)
+      const stockCode = (h.stockCode || h.stockName).trim()
       insertStmt.run(
         uuidv4(),
         accountId,
         stockCode,
-        h.stockName,
+        h.stockName.trim(),
         h.quantity,
         h.avgPrice,
         h.currentPrice,

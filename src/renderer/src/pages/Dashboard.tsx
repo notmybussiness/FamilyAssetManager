@@ -108,8 +108,8 @@ export default function Dashboard({ userId }: DashboardProps): JSX.Element {
   const refreshMarketData = useCallback(async () => {
     setRefreshing(true)
     try {
-      // 환율 조회
-      const rateResult = await window.api.marketData.getExchangeRate('USD', 'KRW')
+      // 환율 조회 (캐시 무시, 강제 새로고침)
+      const rateResult = await window.api.marketData.getExchangeRate('USD', 'KRW', true)
       if (rateResult.success) {
         setExchangeRate(rateResult.rate)
       }
@@ -129,16 +129,30 @@ export default function Dashboard({ userId }: DashboardProps): JSX.Element {
   }, [userId, loadData])
 
   useEffect(() => {
-    loadData()
+    // 앱 시작 시: 먼저 기존 데이터 표시, 그 후 시세 업데이트
+    let isMounted = true
 
-    // 앱 시작 시 자동으로 현재가 조회
-    refreshMarketData()
+    const initializeData = async () => {
+      // 1. 먼저 기존 DB 데이터로 빠르게 화면 표시
+      await loadData()
+
+      // 2. 컴포넌트가 아직 마운트되어 있으면 시세 새로고침
+      //    (refreshMarketData는 내부에서 loadData를 다시 호출함)
+      if (isMounted) {
+        refreshMarketData()
+      }
+    }
+
+    initializeData()
 
     const cleanup = window.api.onTriggerSync(() => {
       loadData()
     })
 
-    return cleanup
+    return () => {
+      isMounted = false
+      cleanup()
+    }
   }, [userId, loadData, refreshMarketData])
 
   if (loading) {
