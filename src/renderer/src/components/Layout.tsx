@@ -93,7 +93,7 @@ export default function Layout({
           </NavLink>
           <NavLink to="/import" className={({ isActive }) => (isActive ? 'active' : '')}>
             <span className="nav-icon">📥</span>
-            엑셀 가져오기
+            계좌내역 가져오기
           </NavLink>
           <NavLink to="/accounts" className={({ isActive }) => (isActive ? 'active' : '')}>
             <span className="nav-icon">🏦</span>

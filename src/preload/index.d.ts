@@ -445,7 +445,7 @@ interface API {
   import: {
     selectFile: () => Promise<{ success: boolean; canceled?: boolean; filePath?: string }>
     parseFile: (filePath: string) => Promise<ImportResult>
-    execute: (accountId: string, rows: ImportRow[]) => Promise<ImportExecuteResult>
+    execute: (accountId: string, rows: ImportRow[], overwrite?: boolean) => Promise<ImportExecuteResult>
     getTemplate: () => Promise<{
       columns: string[]
       sampleData: (string | number)[][]

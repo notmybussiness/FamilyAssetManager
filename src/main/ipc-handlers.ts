@@ -479,11 +479,12 @@ export function registerIpcHandlers(): void {
     return parseExcelFile(filePath)
   })
 
-  ipcMain.handle('import:execute', (_, accountId: string, rows: ImportRow[]) => {
+  ipcMain.handle('import:execute', (_, accountId: string, rows: ImportRow[], overwrite?: boolean) => {
     const db = getDatabase()
     const batchId = generateBatchId()
     let imported = 0
     let skipped = 0
+    let deleted = 0
 
     const insertStmt = db.prepare(`
       INSERT INTO transactions (id, account_id, stock_code, stock_name, type, quantity, price, total_amount, currency, date, is_manual, source)
@@ -495,26 +496,39 @@ export function registerIpcHandlers(): void {
       WHERE account_id = ? AND stock_code = ? AND date = ? AND type = ? AND quantity = ? AND price = ?
     `)
 
+    const deleteTransactions = db.prepare(`DELETE FROM transactions WHERE account_id = ?`)
+    const deleteHoldings = db.prepare(`DELETE FROM holdings WHERE account_id = ?`)
+
     const transaction = db.transaction(() => {
+      // 덮어쓰기 모드: 기존 데이터 삭제
+      if (overwrite) {
+        const delTxResult = deleteTransactions.run(accountId)
+        const delHoldResult = deleteHoldings.run(accountId)
+        deleted = delTxResult.changes
+        console.log(`[Import] Overwrite mode: deleted ${deleted} transactions, ${delHoldResult.changes} holdings`)
+      }
+
       for (const row of rows) {
         if (!row.isValid) {
           skipped++
           continue
         }
 
-        // Check for duplicates
-        const existing = checkDuplicate.get(
-          accountId,
-          row.stockCode,
-          row.date,
-          row.type,
-          row.quantity,
-          row.price
-        )
+        // 덮어쓰기 모드가 아닐 때만 중복 체크
+        if (!overwrite) {
+          const existing = checkDuplicate.get(
+            accountId,
+            row.stockCode,
+            row.date,
+            row.type,
+            row.quantity,
+            row.price
+          )
 
-        if (existing) {
-          skipped++
-          continue
+          if (existing) {
+            skipped++
+            continue
+          }
         }
 
         const id = uuidv4()
@@ -550,7 +564,7 @@ export function registerIpcHandlers(): void {
 
     try {
       transaction()
-      return { success: true, imported, skipped, batchId }
+      return { success: true, imported, skipped, deleted, batchId }
     } catch (error) {
       return {
         success: false,

@@ -64,8 +64,10 @@ export default function Import({ userId }: ImportProps): JSX.Element {
     success: boolean
     imported: number
     skipped: number
+    deleted?: number
     error?: string
   } | null>(null)
+  const [overwrite, setOverwrite] = useState(false)
 
   useEffect(() => {
     loadAccounts()
@@ -111,9 +113,19 @@ export default function Import({ userId }: ImportProps): JSX.Element {
   const handleImport = async () => {
     if (!selectedAccountId || !parseResult?.rows) return
 
+    // 덮어쓰기 모드일 때 확인
+    if (overwrite) {
+      const confirmed = window.confirm(
+        '덮어쓰기 모드가 활성화되어 있습니다.\n' +
+        '이 계좌의 모든 기존 거래내역과 보유종목이 삭제됩니다.\n\n' +
+        '계속하시겠습니까?'
+      )
+      if (!confirmed) return
+    }
+
     setImporting(true)
     try {
-      const result = await window.api.import.execute(selectedAccountId, parseResult.rows)
+      const result = await window.api.import.execute(selectedAccountId, parseResult.rows, overwrite)
       setImportResult(result)
 
       if (result.success) {
@@ -121,6 +133,7 @@ export default function Import({ userId }: ImportProps): JSX.Element {
         setTimeout(() => {
           setFilePath(null)
           setParseResult(null)
+          setOverwrite(false)
         }, 3000)
       }
     } catch (error) {
@@ -158,7 +171,7 @@ export default function Import({ userId }: ImportProps): JSX.Element {
   return (
     <div className="import-page">
       <div className="page-header">
-        <h1>엑셀 가져오기</h1>
+        <h1>계좌내역 가져오기</h1>
         <button className="btn btn-secondary" onClick={handleDownloadTemplate}>
           템플릿 다운로드
         </button>
@@ -322,6 +335,20 @@ export default function Import({ userId }: ImportProps): JSX.Element {
             <div className="card">
               <h3 className="card-title">4단계: 가져오기</h3>
               <div className="mt-2">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={overwrite}
+                    onChange={(e) => setOverwrite(e.target.checked)}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                  <span>덮어쓰기 (기존 거래내역 모두 삭제 후 새로 가져오기)</span>
+                </label>
+                {overwrite && (
+                  <p style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                    ⚠️ 이 계좌의 모든 기존 거래내역과 보유종목이 삭제됩니다!
+                  </p>
+                )}
                 <button
                   className="btn btn-primary"
                   onClick={handleImport}
@@ -341,6 +368,7 @@ export default function Import({ userId }: ImportProps): JSX.Element {
                   >
                     {importResult.success ? (
                       <p className="text-success">
+                        {importResult.deleted && importResult.deleted > 0 && `기존 ${importResult.deleted}건 삭제 후 `}
                         {importResult.imported}건의 거래내역을 가져왔습니다.
                         {importResult.skipped > 0 && ` (${importResult.skipped}건 중복으로 제외)`}
                       </p>

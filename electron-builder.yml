@@ -14,8 +14,9 @@ asarUnpack:
   - node_modules/better-sqlite3/**
 win:
   executableName: family-asset-manager
+  signAndEditExecutable: false
   target:
-    - target: nsis
+    - target: dir
       arch:
         - x64
 nsis:

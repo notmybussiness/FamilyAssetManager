@@ -108,7 +108,7 @@ const api = {
       currency: string
       isValid: boolean
       errors: string[]
-    }>) => ipcRenderer.invoke('import:execute', accountId, rows),
+    }>, overwrite?: boolean) => ipcRenderer.invoke('import:execute', accountId, rows, overwrite),
     getTemplate: () => ipcRenderer.invoke('import:getTemplate'),
     getBrokerageList: () => ipcRenderer.invoke('import:getBrokerageList'),
     parseHoldings: (filePath: string) => ipcRenderer.invoke('import:parseHoldings', filePath),
