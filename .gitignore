@@ -7,6 +7,7 @@ dist/
 dist-electron/
 out/
 release/
+resources/
 
 # Environment files
 .env
@@ -62,3 +63,6 @@ docs/
 # Playwright
 playwright-report/
 test-results/
+
+# E2E Tests
+e2e/
